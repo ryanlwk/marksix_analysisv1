@@ -16,37 +16,59 @@ uv sync
 
 ## Usage
 
-Run the fetcher (will prompt for data range if not specified):
+### Interactive Mode
+
+Run without arguments for interactive menu:
 
 ```bash
 uv run python fetch_data.py
 ```
 
-Choose when prompted:
-
-- **1** – last 1 month of draws  
-- **3** – last 3 months  
-- **6** – last 6 months  
-
-To skip the prompt (e.g. in scripts or automation):
-
-```bash
-uv run python fetch_data.py --months 3
+You'll see:
+```
+What would you like to do?
+1. Update history (fetch new results)
+2. Show statistics (analyze existing data)
+3. Both (update and analyze)
 ```
 
-Supported values: `1`, `3`, `6`.
+**Option 1 - Update History:**
+- **First run**: Downloads all available data (50+ draws) and saves to `history.csv`
+- **Subsequent runs**: Only fetches NEW results since last update (incremental)
+- Fast and efficient - no re-downloading old data
 
-### Frequency Analysis
+**Option 2 - Show Statistics:**
+- Analyzes existing `history.csv` without fetching
+- Choose 1/3/6 months for analysis period
+- No network required
 
-Add `--analyze` to display statistics after fetching:
+**Option 3 - Both:**
+- Updates history with new results
+- Then displays frequency analysis
+
+### Command-Line Mode
+
+Skip the menu with CLI flags:
 
 ```bash
+# Update history only (incremental)
+uv run python fetch_data.py --months 6
+
+# Statistics only (no fetch)
+uv run python fetch_data.py --stats-only --months 3
+
+# Update and analyze
 uv run python fetch_data.py --months 6 --analyze
+
+# Force full refresh (re-download all data)
+uv run python fetch_data.py --force-refresh
 ```
 
-This shows:
-- Top 10 most frequent numbers
-- Numbers that never appeared in the selected period
+### Frequency Analysis Output
+
+Statistics show:
+- Top 10 most frequent numbers (main 6 balls)
+- Numbers that never appeared in the period
 - Least frequent numbers (bottom 10)
 - Most frequent Extra numbers
 

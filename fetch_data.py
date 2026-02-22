@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Fetch historical Hong Kong Mark Six results.
-Saves cleaned data as history.csv with columns: date, n1, n2, n3, n4, n5, n6, special_number (Extra number).
+Fetch and analyze Hong Kong Mark Six results.
+Supports incremental updates and frequency analysis.
+Saves data as history.csv with columns: date, n1, n2, n3, n4, n5, n6, special_number (Extra number).
 """
 
 import argparse
@@ -9,6 +10,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from collections import Counter
 
 import pandas as pd
 import requests
@@ -189,10 +191,26 @@ def clean_df(df: pd.DataFrame) -> pd.DataFrame:
     return df[["date", "n1", "n2", "n3", "n4", "n5", "n6", "special_number"]]
 
 
+def load_existing_history() -> tuple[pd.DataFrame | None, str | None]:
+    """Load existing history.csv if it exists. Returns (DataFrame, latest_date)."""
+    if not OUTPUT_FILE.exists():
+        return None, None
+    
+    try:
+        df = pd.read_csv(OUTPUT_FILE)
+        if len(df) == 0:
+            return None, None
+        
+        df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+        latest_date = df["date"].max()
+        return df, latest_date
+    except Exception as e:
+        print(f"Warning: Could not read existing history.csv: {e}", file=sys.stderr)
+        return None, None
+
+
 def analyze_frequencies(df: pd.DataFrame) -> None:
     """Display frequency analysis of numbers in the dataset."""
-    from collections import Counter
-    
     print(f"\n{'='*60}")
     print(f"FREQUENCY ANALYSIS - {len(df)} draws")
     print(f"Date range: {df['date'].iloc[0]} to {df['date'].iloc[-1]}")
@@ -236,6 +254,24 @@ def analyze_frequencies(df: pd.DataFrame) -> None:
     print(f"\n{'='*60}\n")
 
 
+def ask_user_action() -> int:
+    """Ask user what they want to do. Returns 1, 2, or 3."""
+    print("\nWhat would you like to do?")
+    print("1. Update history (fetch new results)")
+    print("2. Show statistics (analyze existing data)")
+    print("3. Both (update and analyze)")
+    
+    while True:
+        try:
+            choice = input("\nEnter choice (1/2/3): ").strip()
+            if choice in ("1", "2", "3"):
+                return int(choice)
+            print("Please enter 1, 2, or 3.", file=sys.stderr)
+        except (EOFError, KeyboardInterrupt):
+            print("\nDefaulting to option 1 (update history).", file=sys.stderr)
+            return 1
+
+
 def ask_data_range() -> int:
     """Ask user for 1, 3, or 6 months of data. Returns number of months."""
     while True:
@@ -255,56 +291,125 @@ def main() -> None:
         "--months",
         type=int,
         choices=[1, 3, 6],
-        help="Number of months of data to fetch (1, 3, or 6). If not set, will prompt."
+        help="Number of months for statistics (1, 3, or 6). If not set, will prompt."
     )
     parser.add_argument(
         "--analyze",
         action="store_true",
-        help="Display frequency analysis after fetching data."
+        help="Display frequency analysis (equivalent to choosing option 3)."
+    )
+    parser.add_argument(
+        "--stats-only",
+        action="store_true",
+        help="Only show statistics from existing data (equivalent to choosing option 2)."
+    )
+    parser.add_argument(
+        "--force-refresh",
+        action="store_true",
+        help="Force full data refresh instead of incremental update."
     )
     args = parser.parse_args()
     
-    df = None
-    source_name = None
+    existing_df, latest_date = load_existing_history()
     
-    for name, fetcher in [
-        ("Lottolyzer", fetch_from_lottolyzer),
-        ("icelam JSON", fetch_from_icelam),
-        ("williammw CSV", fetch_from_williammw_csv),
-    ]:
-        try:
-            df = fetcher()
-            if df is not None and len(df) > 0:
-                source_name = name
-                print(f"Loaded {len(df)} rows from {name}.", file=sys.stderr)
-                break
-        except Exception as e:
-            print(f"{name} error: {e}", file=sys.stderr)
-    
-    if df is None or len(df) == 0:
-        print("No data obtained from any source.", file=sys.stderr)
-        sys.exit(1)
-    
-    df = clean_df(df)
-    
-    if args.months:
-        months = args.months
+    if args.stats_only:
+        action = 2
+    elif args.analyze:
+        action = 3
+    elif args.months is not None or args.force_refresh:
+        action = 1
     else:
-        months = ask_data_range()
+        action = ask_user_action()
     
-    cutoff = pd.Timestamp.now() - pd.DateOffset(months=months)
-    df["_dt"] = pd.to_datetime(df["date"], errors="coerce")
-    df = df[df["_dt"] >= cutoff].drop(columns=["_dt"]).reset_index(drop=True)
+    if action == 2:
+        if existing_df is None:
+            print("No existing history.csv found. Please fetch data first (option 1).", file=sys.stderr)
+            sys.exit(1)
+        
+        if args.months:
+            months = args.months
+        else:
+            months = ask_data_range()
+        
+        cutoff = pd.Timestamp.now() - pd.DateOffset(months=months)
+        existing_df["_dt"] = pd.to_datetime(existing_df["date"], errors="coerce")
+        filtered_df = existing_df[existing_df["_dt"] >= cutoff].drop(columns=["_dt"]).reset_index(drop=True)
+        
+        if len(filtered_df) == 0:
+            print(f"No draws in the selected {months}-month range.", file=sys.stderr)
+            sys.exit(0)
+        
+        print(f"Analyzing {len(filtered_df)} draws from existing data.", file=sys.stderr)
+        analyze_frequencies(filtered_df)
+        return
     
-    if len(df) == 0:
-        print(f"No draws in the selected {months}-month range; writing header-only CSV.", file=sys.stderr)
-    
-    df.to_csv(OUTPUT_FILE, index=False, encoding="utf-8")
-    
-    print(f"Saved to {OUTPUT_FILE} ({len(df)} rows).", file=sys.stderr)
-    
-    if args.analyze and len(df) > 0:
-        analyze_frequencies(df)
+    if action in (1, 3):
+        if existing_df is not None and not args.force_refresh:
+            print(f"Existing data found. Latest date: {latest_date}", file=sys.stderr)
+            print("Fetching incremental updates...", file=sys.stderr)
+            
+            df_new = fetch_from_lottolyzer()
+            if df_new is None or len(df_new) == 0:
+                print("Could not fetch new data from Lottolyzer.", file=sys.stderr)
+                sys.exit(1)
+            
+            df_new = clean_df(df_new)
+            df_new["_dt"] = pd.to_datetime(df_new["date"], errors="coerce")
+            latest_dt = pd.to_datetime(latest_date)
+            new_rows = df_new[df_new["_dt"] > latest_dt].drop(columns=["_dt"])
+            
+            if len(new_rows) == 0:
+                print(f"No new results since {latest_date}. Data is up to date.", file=sys.stderr)
+                df = existing_df
+            else:
+                print(f"Found {len(new_rows)} new draws since {latest_date}.", file=sys.stderr)
+                df = pd.concat([existing_df, new_rows], ignore_index=True)
+                df = df.drop_duplicates(subset=["date"], keep="first")
+                df = df.sort_values("date", ascending=False).reset_index(drop=True)
+                df.to_csv(OUTPUT_FILE, index=False, encoding="utf-8")
+                print(f"Updated {OUTPUT_FILE} (now {len(df)} total rows).", file=sys.stderr)
+        else:
+            if args.force_refresh:
+                print("Force refresh: downloading all data...", file=sys.stderr)
+            else:
+                print("No existing data. Fetching full history...", file=sys.stderr)
+            
+            df = None
+            for name, fetcher in [
+                ("Lottolyzer", fetch_from_lottolyzer),
+                ("icelam JSON", fetch_from_icelam),
+                ("williammw CSV", fetch_from_williammw_csv),
+            ]:
+                try:
+                    df = fetcher()
+                    if df is not None and len(df) > 0:
+                        print(f"Loaded {len(df)} rows from {name}.", file=sys.stderr)
+                        break
+                except Exception as e:
+                    print(f"{name} error: {e}", file=sys.stderr)
+            
+            if df is None or len(df) == 0:
+                print("No data obtained from any source.", file=sys.stderr)
+                sys.exit(1)
+            
+            df = clean_df(df)
+            df.to_csv(OUTPUT_FILE, index=False, encoding="utf-8")
+            print(f"Saved to {OUTPUT_FILE} ({len(df)} rows).", file=sys.stderr)
+        
+        if action == 3:
+            if args.months:
+                months = args.months
+            else:
+                months = ask_data_range()
+            
+            cutoff = pd.Timestamp.now() - pd.DateOffset(months=months)
+            df["_dt"] = pd.to_datetime(df["date"], errors="coerce")
+            filtered_df = df[df["_dt"] >= cutoff].drop(columns=["_dt"]).reset_index(drop=True)
+            
+            if len(filtered_df) == 0:
+                print(f"No draws in the selected {months}-month range.", file=sys.stderr)
+            else:
+                analyze_frequencies(filtered_df)
 
 
 if __name__ == "__main__":
