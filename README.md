@@ -37,14 +37,15 @@ What would you like to do?
 - **Subsequent runs**: Only fetches NEW results since last update (incremental)
 - Fast and efficient - no re-downloading old data
 
-**Option 2 - Show Statistics:**
-- Analyzes existing `history.csv` without fetching
-- Choose 1/3/6 months for analysis period
+**Option 2 - Show History and Analysis:**
+- Displays draw results table from existing `history.csv`
+- Shows frequency analysis
+- Choose 1/3/6 months for display period
 - No network required
 
 **Option 3 - Both:**
 - Updates history with new results
-- Then displays frequency analysis
+- Displays draw results and frequency analysis
 
 ### Command-Line Mode
 
@@ -54,7 +55,7 @@ Skip the menu with CLI flags:
 # Update history only (incremental)
 uv run python fetch_data.py --months 6
 
-# Statistics only (no fetch)
+# Show history and analysis only (no fetch)
 uv run python fetch_data.py --stats-only --months 3
 
 # Update and analyze
@@ -64,9 +65,14 @@ uv run python fetch_data.py --months 6 --analyze
 uv run python fetch_data.py --force-refresh
 ```
 
-### Frequency Analysis Output
+### Output Display
 
-Statistics show:
+**Draw History Table:**
+- Date and winning numbers for each draw
+- Extra number column
+- Sorted newest first
+
+**Frequency Analysis:**
 - Top 10 most frequent numbers (main 6 balls)
 - Numbers that never appeared in the period
 - Least frequent numbers (bottom 10)

@@ -209,9 +209,26 @@ def load_existing_history() -> tuple[pd.DataFrame | None, str | None]:
         return None, None
 
 
+def display_history(df: pd.DataFrame) -> None:
+    """Display draw history in a formatted table."""
+    print(f"\n{'='*60}")
+    print(f"DRAW HISTORY - {len(df)} draws")
+    print(f"Date range: {df['date'].iloc[0]} to {df['date'].iloc[-1]}")
+    print(f"{'='*60}\n")
+    print(f"{'Date':<12} {'Numbers':<25} {'Extra':<5}")
+    print("-" * 60)
+    
+    for _, row in df.iterrows():
+        nums = f"{row['n1']:2d}, {row['n2']:2d}, {row['n3']:2d}, {row['n4']:2d}, {row['n5']:2d}, {row['n6']:2d}"
+        extra = f"{row['special_number']}" if pd.notna(row['special_number']) else "N/A"
+        print(f"{row['date']:<12} {nums:<25} {extra:<5}")
+    
+    print()
+
+
 def analyze_frequencies(df: pd.DataFrame) -> None:
     """Display frequency analysis of numbers in the dataset."""
-    print(f"\n{'='*60}")
+    print(f"{'='*60}")
     print(f"FREQUENCY ANALYSIS - {len(df)} draws")
     print(f"Date range: {df['date'].iloc[0]} to {df['date'].iloc[-1]}")
     print(f"{'='*60}\n")
@@ -258,8 +275,8 @@ def ask_user_action() -> int:
     """Ask user what they want to do. Returns 1, 2, or 3."""
     print("\nWhat would you like to do?")
     print("1. Update history (fetch new results)")
-    print("2. Show statistics (analyze existing data)")
-    print("3. Both (update and analyze)")
+    print("2. Show history and analysis (from existing data)")
+    print("3. Both (update and show)")
     
     while True:
         try:
@@ -339,7 +356,7 @@ def main() -> None:
             print(f"No draws in the selected {months}-month range.", file=sys.stderr)
             sys.exit(0)
         
-        print(f"Analyzing {len(filtered_df)} draws from existing data.", file=sys.stderr)
+        display_history(filtered_df)
         analyze_frequencies(filtered_df)
         return
     
@@ -409,6 +426,7 @@ def main() -> None:
             if len(filtered_df) == 0:
                 print(f"No draws in the selected {months}-month range.", file=sys.stderr)
             else:
+                display_history(filtered_df)
                 analyze_frequencies(filtered_df)
 
 
